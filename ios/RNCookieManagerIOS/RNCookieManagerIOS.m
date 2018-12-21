@@ -44,10 +44,18 @@ RCT_EXPORT_METHOD(
     [cookieProperties setObject:name forKey:NSHTTPCookieName];
     [cookieProperties setObject:value forKey:NSHTTPCookieValue];
     [cookieProperties setObject:domain forKey:NSHTTPCookieDomain];
+  if (origin != nil) {
     [cookieProperties setObject:origin forKey:NSHTTPCookieOriginURL];
+  }
+  if (path != nil) {
     [cookieProperties setObject:path forKey:NSHTTPCookiePath];
+  }
+  if (version != nil) {
     [cookieProperties setObject:version forKey:NSHTTPCookieVersion];
+  }
+  if (expiration != nil) {
     [cookieProperties setObject:expiration forKey:NSHTTPCookieExpires];
+  }
 
     NSHTTPCookie *cookie = [NSHTTPCookie cookieWithProperties:cookieProperties];
 
@@ -165,28 +173,25 @@ RCT_EXPORT_METHOD(
     rejecter:(RCTPromiseRejectBlock)reject)
 {
     if (useWebKit) {
-        if (@available(iOS 11.0, *)) {
-            dispatch_async(dispatch_get_main_queue(), ^(){
-                WKHTTPCookieStore *cookieStore = [[WKWebsiteDataStore defaultDataStore] httpCookieStore];
-                [cookieStore getAllCookies:^(NSArray<NSHTTPCookie *> *allCookies) {
-                    for(NSHTTPCookie *currentCookie in allCookies) {
-                        // Uses the NSHTTPCookie directly has no effect, nor deleted the cookie nor thrown an error.
-                        // Create a new cookie with the given values and delete this one do the work.
-                        NSMutableDictionary<NSHTTPCookiePropertyKey, id> *cookieData =  [NSMutableDictionary dictionary];
-                        [cookieData setValue:currentCookie.name forKey:NSHTTPCookieName];
-                        [cookieData setValue:currentCookie.value forKey:NSHTTPCookieValue];
-                        [cookieData setValue:currentCookie.domain forKey:NSHTTPCookieDomain];
-                        [cookieData setValue:currentCookie.path forKey:NSHTTPCookiePath];
-
-                        NSHTTPCookie *newCookie = [NSHTTPCookie cookieWithProperties:cookieData];
-                        [cookieStore deleteCookie:newCookie completionHandler:^{}];
-                    }
-                    resolve(nil);
-                }];
-            });
-        } else {
-            reject(@"", NOT_AVAILABLE_ERROR_MESSAGE, nil);
-        }
+      if (@available(iOS 9.0, *)) {
+        dispatch_async(dispatch_get_main_queue(), ^(){
+          [[WKWebsiteDataStore defaultDataStore] fetchDataRecordsOfTypes:WKWebsiteDataStore.allWebsiteDataTypes completionHandler:^(NSArray<WKWebsiteDataRecord *> * records) {
+            __block int i = 0;
+            NSUInteger count = records.count;
+            for (WKWebsiteDataRecord *r in records) {
+              NSArray* ra = @[r];
+              [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:r.dataTypes forDataRecords:ra completionHandler:^{
+                i++;
+                if (i >= count) {
+                  resolve(nil);
+                }
+              }];
+            }
+          }];
+        });
+      } else {
+        reject(@"", NOT_AVAILABLE_ERROR_MESSAGE, nil);
+      }
     } else {
         NSHTTPCookieStorage *cookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
         for (NSHTTPCookie *c in cookieStorage.cookies) {
@@ -196,16 +201,81 @@ RCT_EXPORT_METHOD(
     }
 }
 
-RCT_EXPORT_METHOD(clearByName:(NSString *) name
-    resolver:(RCTPromiseResolveBlock)resolve
-    rejecter:(RCTPromiseRejectBlock)reject) {
+RCT_EXPORT_METHOD(clearByDisplayName:(NSString *) name
+                  is:(BOOL)useWebKit
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+  if (useWebKit) {
+    if (@available(iOS 9.0, *)) {
+      dispatch_async(dispatch_get_main_queue(), ^(){
+        [[WKWebsiteDataStore defaultDataStore] fetchDataRecordsOfTypes:WKWebsiteDataStore.allWebsiteDataTypes completionHandler:^(NSArray<WKWebsiteDataRecord *> * records) {
+          __block int i = 0;
+          NSUInteger count = records.count;
+          NSMutableArray* needToClearRecords = [[NSMutableArray alloc] initWithCapacity:count];
+          for (WKWebsiteDataRecord *r in records) {
+            if ([r.displayName containsString:name]) {
+              needToClearRecords[i++] = r;
+            }
+          }
+          i = 0;
+          count = needToClearRecords.count;
+          for (WKWebsiteDataRecord *r in needToClearRecords) {
+            [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:r.dataTypes forDataRecords:@[r] completionHandler:^{
+              i++;
+              if (i == count) {
+                resolve(nil);
+              }
+            }];
+          }
+        }];
+      });
+    } else {
+      reject(@"", NOT_AVAILABLE_ERROR_MESSAGE, nil);
+    }
+  } else {
     NSHTTPCookieStorage *cookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
     for (NSHTTPCookie *c in cookieStorage.cookies) {
-      if ([[c name] isEqualToString:name]) {
+      if ([[c domain] containsString:name]) {
         [cookieStorage deleteCookie:c];
       }
     }
     resolve(nil);
+  }
+}
+
+RCT_EXPORT_METHOD(clearByName:(NSString *) name
+
+    resolver:(RCTPromiseResolveBlock)resolve
+    rejecter:(RCTPromiseRejectBlock)reject) {
+  
+  NSHTTPCookieStorage *cookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
+  for (NSHTTPCookie *c in cookieStorage.cookies) {
+    if ([[c name] isEqualToString:name]) {
+      [cookieStorage deleteCookie:c];
+    }
+  }
+  dispatch_async(dispatch_get_main_queue(), ^(){
+    [[WKWebsiteDataStore defaultDataStore] fetchDataRecordsOfTypes:WKWebsiteDataStore.allWebsiteDataTypes completionHandler:^(NSArray<WKWebsiteDataRecord *> * records) {
+      __block int i = 0;
+      NSUInteger count = records.count;
+      NSMutableArray* needToClearRecords = [[NSMutableArray alloc] initWithCapacity:count];
+      for (WKWebsiteDataRecord *r in records) {
+        if ([r.displayName containsString:name]) {
+          needToClearRecords[i++] = r;
+        }
+      }
+      i = 0;
+      count = needToClearRecords.count;
+      for (WKWebsiteDataRecord *r in needToClearRecords) {
+        [[WKWebsiteDataStore defaultDataStore] removeDataOfTypes:r.dataTypes forDataRecords:@[r] completionHandler:^{
+          i++;
+          if (i == count) {
+            resolve(nil);
+          }
+        }];
+      }
+    }];
+  });
 }
 
 RCT_EXPORT_METHOD(
@@ -227,21 +297,6 @@ RCT_EXPORT_METHOD(
     } else {
         NSHTTPCookieStorage *cookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
         resolve([self createCookieList:cookieStorage.cookies]);
-    }
-}
-
-RCT_EXPORT_METHOD(getAll:(RCTPromiseResolveBlock)resolve
-    rejecter:(RCTPromiseRejectBlock)reject) {
-    NSHTTPCookieStorage *cookieStorage = [NSHTTPCookieStorage sharedHTTPCookieStorage];
-    NSMutableDictionary *cookies = [NSMutableDictionary dictionary];
-    for (NSHTTPCookie *c in cookieStorage.cookies) {
-        NSMutableDictionary *d = [NSMutableDictionary dictionary];
-        [d setObject:c.value forKey:@"value"];
-        [d setObject:c.name forKey:@"name"];
-        [d setObject:c.domain forKey:@"domain"];
-        [d setObject:c.path forKey:@"path"];
-        [d setObject:[self.formatter stringFromDate:c.expiresDate] forKey:@"expiresDate"];
-        [cookies setObject:d forKey:c.name];
     }
 }
 

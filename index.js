@@ -27,6 +27,7 @@ const functions = [
 module.exports = {
   getAll: (useWebKit = false) => CookieManager.getAll(useWebKit),
   clearAll: (useWebKit = false) => CookieManager.clearAll(useWebKit),
+  clearByDisplayName: (displayName, useWebKit = false) => CookieManager.clearByDisplayName(displayName, useWebKit),
   get: (url, useWebKit = false) => CookieManager.get(url, useWebKit),
   set: (cookie, useWebKit = false) => CookieManager.set(cookie, useWebKit),
 };
