@@ -66,8 +66,9 @@ RCT_EXPORT_METHOD(
         if (@available(iOS 11.0, *)) {
             dispatch_async(dispatch_get_main_queue(), ^(){
                 WKHTTPCookieStore *cookieStore = [[WKWebsiteDataStore defaultDataStore] httpCookieStore];
-                [cookieStore setCookie:cookie completionHandler:nil];
+              [cookieStore setCookie:cookie completionHandler:^{
                 resolve(nil);
+              }];
             });
         } else {
             reject(@"", NOT_AVAILABLE_ERROR_MESSAGE, nil);
